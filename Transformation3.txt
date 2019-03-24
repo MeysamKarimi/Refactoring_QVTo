@@ -1,0 +1,89 @@
+modeltype MM "strict" uses MEII('http://MeysamKarimi.com');
+transformation Refactoring3(in srcModel:MM, out destModel:MM);
+
+property model : MM::root = null;
+
+main() 
+{
+	srcModel.rootObjects()[root] -> map Model2Model();
+}
+
+mapping root :: Model2Model() : root 
+{
+	model := object root { name:='model' };		
+	srcModel.objectsOfType(Type) ->	map Type2Type();
+	srcModel.objectsOfType(Entity) ->	map Entity2Entity();
+	srcModel.objectsOfType(Property) ->	map Property2Property();		
+}
+
+mapping Type::Type2Type() : Type
+{	
+	result.name := self.name;
+	result._property := self._property.late resolveone(MM::Property);
+	model.has += result;				
+}
+
+mapping Entity::Entity2Entity() : Entity
+{	
+	result.name := self.name;
+	--result.generalisation := self.generalisation;
+	--result.specification := self.specification;
+	model.has += result;				
+}
+
+mapping Property::Property2Property() :  p:Property, e:Entity, g:Generalization-- Set(NamedElement)
+when { self.owner.generalisation -> size() = 0 } -- do not be subclass
+{
+	if(Entity.allInstances()  
+		-> select(c|c.ownedAttribute -> exists(pr|pr.name = self.name)) -> size() > 0 ) --A1.p, A2.p, A3.p
+	then
+		{
+			log("1: " + self.name);
+			if(not model.has -> exists(pr | pr.name = self.name))
+			{
+				p.name := self.name;
+				p.type := self.type.late resolveone(MM::Type);
+				--create new element here and bind this property to that
+				e.name := "newEntity";
+				e.ownedAttribute += p;				
+				
+				model.has += e;  	
+				model.has += p;
+				-- generalisation
+				log("3: " + self.owner.name);
+				if(not model.has2 -> exists(ge|ge.specific.name = self.owner.name
+					and ge.general.name <> e.name))
+				{
+					g.general:= e;
+					g.specific:=self.owner;
+					model.has2 += g;
+				}endif;																																														
+			}
+			else
+			{
+				if(not model.has2 -> exists(ge|ge.specific.name = self.owner.name
+				and ge.general.name <> e.name))
+				{
+					model.has2 -> forEach(entt)
+					{
+						if(
+							not entt.general.oclIsUndefined()
+							and entt.general.ownedAttribute -> exists(pp|pp.name = self.name) 
+						)--entt.general.ownedAttribute -> exists(self))							
+							{
+								g.general:= entt.general;								
+								g.specific:=self.owner;
+								model.has2 += g;
+							}endif;						
+					};					
+				}endif;
+			}endif;					
+		}endif;	
+}
+
+helper Generalization::copyGeneralisation(in father : Entity, child : Entity ) : Generalization {	
+	return object Generalization {
+	general := father;	
+	specific := child;
+	}	
+}

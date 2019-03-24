@@ -1,0 +1,143 @@
+modeltype MM "strict" uses MEII('http://MeysamKarimi.com');
+
+transformation Refactoring2(in srcModel:MM, out destModel:MM);
+
+
+main()
+{
+	srcModel.rootObjects()[root] -> map Model2Model();
+}
+
+mapping root :: Model2Model() : root 
+{
+	name := self.name;
+	has += self.has -> select (t|t.oclIsKindOf(Type))[Type] -> 
+		map	Type2Type();
+	has += self.has -> select (p|p.oclIsKindOf(Property))[Property] -> 
+		map	Property2Property1(); --  this is for properties of root class (Entity C)	
+	has += self.has -> select (p|p.oclIsKindOf(Property))[Property] -> 
+		map CopyPropertiesSubclasses(); -- this is for properties which are not the same in all sub classes. property2 from Entity A1
+}
+
+mapping Type::Type2Type() : Type
+{
+	result.name := self.name;
+	result._property := self._property.late resolveone(MM::Property);				
+}
+mapping Property::Property2Property1() : Property
+when { self.owner.generalisation -> size() = 0 } -- do not be subclass
+{
+	result.name := self.name;
+	result.type := self.type;
+	result.owner := self.owner;			
+}
+
+mapping Property::CopyPropertiesSubclasses() : Property
+when{ self.owner.generalisation -> size() > 0 } -- be subclass
+{
+	var parents = self.owner.generalisation.specific;	 --A1, A2, A3, B1, B2			
+	var properties = self.owner.generalisation.specific.ownedAttribute; --A1.P, A2.P, A3.P, B1.P2
+	var parents2 = self.owner.generalisation.specific.name;	 --A1, A2, A3, B1, B2
+	parents2 -> forEach(pp)
+	{
+	log("0: " + pp);
+	};
+			 			
+	if(Entity.allInstances()  
+		-> select(c|c.ownedAttribute -> exists(pr|pr.name = self.name)) -> size() < 2 ) --B1.P2
+	then
+		{	
+			log("1: " + self.name);							
+			result.name := self.name;			
+			result.type := self.type;					
+			owner := self.owner;
+			self.owner.copyEntity(self.owner);
+		}
+		else{								
+			if(not self.owner.generalisation.specific.ownedAttribute.name -> includes(self.name))
+			then
+			{							
+				self.owner.generalisation.general -> forEach(ent)
+				{
+					log("2: " +ent.name);					
+				};				
+				-- create new entity and bind
+																													
+				var newEnt := object Entity {
+					name := "newEntity";									
+					ownedAttribute := self.late resolveone(MM::Property);					
+					self.owner.generalisation.general -> forEach(ent)
+					{
+						if(not ent.name -> includes("newEntity"))
+						{
+							generalisation := late resolveone(MM::Generalization);
+						}endif;
+					};  					
+				};									
+			}
+			else
+			{				
+				log("3: " + self.owner.name);			    										
+				--destModel.removeElement(self);					
+				if(destModel.objectsOfType(MM::Property) ->  exists(p|p.name = self.name))
+				then{
+					log("4: " + self.owner.name);
+					result.name := self.name + " deleted";
+					--result.type := self.type.late resolveone(MM::Type);
+				}
+				else
+				{
+					log("5: " + self.owner.name);
+					result.name := self.name;
+					result.type := self.type.late resolveone(MM::Type);
+					--create new element here and bind this property to that	
+					var newEnt := object Entity 
+					{
+						name := "newEntity";
+						--ownedAttribute := self;					
+						ownedAttribute := self.late resolveone(MM::Property);																								  				
+					};					
+					self.owner.generalisation.general -> forEach(ent)
+						{							
+						--   generalisation := late resolveone(MM::Generalization);
+							self.owner.generalisation.copyGeneralisation(
+								ent, newEnt);						
+						};
+					self.owner.generalisation.general -> forEach(ent) --C
+						{							
+							log("6: " + ent.name);						
+						 	ent.specification.specific -> select (sp| sp.ownedAttribute.name
+						 	-> includes(self.name)) -> forEach(en)
+						 	{
+						 		log("7: " + en.name);
+						 		if(not self.owner.generalisation.specific -> includes(en) and 
+						 			not self.owner.generalisation.general -> includes(newEnt))
+						 		{
+						 			log("8: " + en.name);
+									self.owner.generalisation.copyGeneralisation(
+									newEnt, en);
+								}endif;						
+							};
+							self.owner.generalisation.copyGeneralisation(newEnt, self.owner);
+						};
+				}endif;							
+			}endif;
+		} endif;				
+}
+
+helper Generalization::copyGeneralisation(in father : Entity, child : Entity ) : Generalization {	
+	return object Generalization {
+	general := father;	
+	specific := child;
+	}
+}
+helper Entity::copyEntity(in ent : Entity ) : Entity {	
+	return object Entity 
+	{
+		name := ent.name;
+		self.generalisation.general -> forEach(ge)
+		{
+			generalisation := ent.generalisation.copyGeneralisation(ge, ent);
+		}
+	}
+}

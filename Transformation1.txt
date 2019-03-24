@@ -1,0 +1,97 @@
+modeltype MM "strict" uses MEII('http://MeysamKarimi.com');
+
+transformation Refactoring(in srcModel:MM, out destModel:MM);
+
+
+main()
+{
+	srcModel.rootObjects()[root] -> map Model2Model();
+}
+
+mapping root :: Model2Model() : root 
+{
+
+	name := self.name;
+	has2 += self.has2 -> select (n|n.oclIsTypeOf(Generalization))[Generalization] -> 
+		map  gen2gen();
+	has += self.has -> select (n|n.oclIsTypeOf(Entity))[Entity] -> 
+		map  ent2ent();	  	  
+	has += self.has -> select (t|t.oclIsKindOf(Type))[Type] -> 
+		map	Type2Type();
+	has += self.has -> select (p|p.oclIsKindOf(Property))[Property] -> 
+		map	Property2Property1(); --  this is for properties of root class (Entity C)	
+	has += self.has -> select (p|p.oclIsKindOf(Property))[Property] -> 
+		map CopyPropertiesSubclasses(); -- this is for properties which are not the same in all sub classes. property2 from Entity A1
+	--has += self.has -> select (p|p.oclIsKindOf(Entity))[Entity] -> map CopyPropertiesSubclasses(); -- this is for properties which are not the same in all sub classes. property2 from Entity A1
+}
+
+mapping Type::Type2Type() : Type
+{
+	result.name := self.name;
+	result._property := self._property.late resolveone(MM::Property);				
+}
+
+mapping Entity::ent2ent() : Entity
+{
+	result.name := self.name;
+	result.generalisation := self.generalisation.late resolveone(MM::Generalization);
+	result.ownedAttribute := self.ownedAttribute.late resolveone(MM::Property);
+	result.specification := self.specification.late resolveone(MM::Generalization); 			
+}
+
+mapping Generalization::gen2gen() : Generalization
+{	
+	result.specific := self.specific;
+	result.general := self.general;	
+}
+
+mapping Property::Property2Property1() : Property
+when { self.owner.generalisation -> size() = 0 } -- do not be subclass
+{
+	result.name := self.name;
+	result.type := self.type;
+	result.owner := self.owner;			
+}
+
+mapping Property::CopyPropertiesSubclasses() : Property
+when{ self.owner.generalisation -> size() > 0 } -- be subclass
+{
+	var parents = self.owner.generalisation.specific;	 --A1, A2
+	--var properties = MM::Property.allInstances() -> --A1.P1, A2.P1, A1.P2
+	--	select(pr|pr.owner.generalisation -> size() > 0);
+		
+	var properties = self.owner.generalisation.specific.ownedAttribute; --A1.P1, A2.P1, A1.P2
+		  
+			
+	--properties -> forEach(prp)	--A1.P1 ; A1.P2; A2.P1
+	--{	
+	--if(parents ->
+	--	select(c|c.ownedAttribute -> exists(pr|pr.name = self.name)) -> size() < 2 ) --A1: 2, A2:1; A1:2 			 
+	if(Entity.allInstances() ---> select (e|e.generalisation = self.owner.generalisation) 
+		-> select(c|c.ownedAttribute -> exists(pr|pr.name = self.name)) -> size() < 2 ) --A1: 2, A2:1; A1:2
+	then
+		{								
+			result.name := self.name;			
+			result.type := self.type;					
+			owner := self.owner;
+		}
+		else{
+			--if parent contains it ignore
+			--otherwise add to parent								
+			if(not self.owner.generalisation.general.ownedAttribute.name -> includes(self.name))
+			then
+			{							
+				result.name := self.name;			
+				result.type := self.type;
+				self.owner.generalisation.general -> forEach(ent)
+				{result.owner := ent;}				
+			}
+			else
+			{			    
+				result.name := "deleted";
+				result.type := self.type.late resolveone(MM::Type);
+				--destModel.removeElement(self);												
+			}
+			 endif;
+		} endif;				
+}
