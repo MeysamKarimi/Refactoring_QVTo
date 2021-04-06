@@ -7,4 +7,4 @@ Case Study Assumptions:
 3- Property name uniqueness in classes: The owned attributes (properties) of each class have distinct names within the class, and do not have common names with the attributes of any superclass. 4- Single inheritance: There is no multiple or redundant inheritance.
 
 For more information on this topic you can read following paper: 
-https://www.sciencedirect.com/science/article/pii/S0167642313001871
+https://www.sciencedirect.com/science/article/pii/S2590118420300319
